@@ -117,6 +117,7 @@ const NAV = [
     ["Standard trailer ensuite", "/portable-bathroom-hire/"],
     ["Luxury bathroom", "/luxury-portable-bathroom/"],
     ["All Access ensuite (new)", "/accessible-portable-bathroom/"],
+    ["Temporary kitchen", "/temporary-kitchen-hire/"],
   ]],
   ["Insurance claims", "/insurance-temporary-bathroom/"],
   ["Renovations", "/bathroom-renovation-hire/"],
@@ -168,6 +169,7 @@ function footer() {
       <li><a href="${u("/portable-bathroom-hire/")}">Standard trailer ensuite</a></li>
       <li><a href="${u("/luxury-portable-bathroom/")}">Luxury portable bathroom</a></li>
       <li><a href="${u("/accessible-portable-bathroom/")}">All Access ensuite</a></li>
+      <li><a href="${u("/temporary-kitchen-hire/")}">Temporary kitchen hire</a></li>
     </ul></div>
     <div><h2>Who we help</h2><ul>
       <li><a href="${u("/insurance-temporary-bathroom/")}">Insurance builders and restorers</a></li>
@@ -208,7 +210,7 @@ function quoteForm({ unit = "", heading = "Get a quote", compact = false, source
   </div>
   <div class="grid2">
     <label>Unit<select name="unit_interest">
-      ${opt("", "Not sure, advise me")}${opt("Compact ensuite")}${opt("Standard trailer ensuite")}${opt("Luxury bathroom")}${opt("All Access ensuite")}
+      ${opt("", "Not sure, advise me")}${opt("Compact ensuite")}${opt("Standard trailer ensuite")}${opt("Luxury bathroom")}${opt("All Access ensuite")}${opt("Temporary kitchen")}
     </select></label>
     <label>Start date<input name="start_date" type="date"></label>
   </div>
@@ -543,6 +545,36 @@ function accessiblePage() {
   });
 }
 
+function kitchenPage() {
+  const p = "/temporary-kitchen-hire/";
+  return page({
+    path: p, title: "Temporary Kitchen Hire Melbourne | Insurance & Renovation | Wheelie Bathrooms",
+    description: "Temporary kitchen hire for insurance repairs and kitchen renovations across Melbourne, Geelong and Ballarat. Delivered, connected and collected. Ask about availability.",
+    ldExtra: [crumbs([["Home", "/"], ["Temporary kitchen hire", p]]), ld({ "@context": "https://schema.org", "@type": "Service", name: "Temporary kitchen hire", serviceType: "Temporary kitchen hire", provider: { "@id": ORIGIN + "/#business" }, areaServed: ["Melbourne", "Geelong", "Ballarat"].map((n) => ({ "@type": "City", name: n })) })],
+    body: `
+<section class="page-hero slim"><div class="wrap narrow">
+  <p class="eyebrow">Temporary kitchen</p>
+  <h1>Temporary kitchen hire</h1>
+  <p class="lead">When a fire, flood or renovation takes out the kitchen, we can put a working temporary kitchen on site so the household can keep cooking at home.</p>
+  <div class="btns"><a class="btn" href="#quote">Check availability</a><a class="btn btn-ghost" href="tel:${BIZ.tel}">${ICON.phone} ${BIZ.phone}</a></div>
+</div></section>
+<section class="section"><div class="wrap split">
+  <div>
+    <h2>For insurance builders and restorers</h2>
+    <p>A kitchen on site keeps the family in the house during the repair instead of in alternative accommodation, and saves the meal allowance. We bill your job or claim number directly.</p>
+    <h2>For kitchen renovations</h2>
+    <p>Renovating the only kitchen in the house means weeks of takeaway. A temporary kitchen in the driveway or yard lets you keep cooking while the trades work.</p>
+  </div>
+  <div class="panel">
+    <h3>How it works</h3>
+    ${featureList(["Delivered, set up and connected by our team", "Hired by the day or week, as long as the job takes", "Collected once the new kitchen is in", "Can be booked with a portable bathroom on the same job"])}
+    <p>We have limited kitchen units, so tell us the site, dates and expected length of the job and we'll confirm availability.</p>
+  </div>
+</div></section>
+<section class="section" id="quote"><div class="wrap narrow">${quoteForm({ unit: "Temporary kitchen", heading: "Check availability", source: p })}</div></section>`,
+  });
+}
+
 function audiencePage(o) {
   return page({
     path: o.path, title: o.title, description: o.description, image: o.hero,
@@ -841,6 +873,7 @@ async function main() {
     "/accessible-portable-bathroom/": accessiblePage(),
     "/insurance-temporary-bathroom/": insurancePage(),
     "/bathroom-renovation-hire/": renovationPage(),
+    "/temporary-kitchen-hire/": kitchenPage(),
     "/faq/": faqPage(faqs),
     "/about/": aboutPage(),
     "/contact/": contactPage(),

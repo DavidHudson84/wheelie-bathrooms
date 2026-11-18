@@ -66,7 +66,14 @@ function toast(m) { const t = document.createElement("div"); t.className = "toas
 function formData(f) { const o = {}; new FormData(f).forEach((v, k) => o[k] = String(v).trim() === "" ? null : String(v).trim()); f.querySelectorAll("input[type=checkbox]").forEach(c => o[c.name] = c.checked); return o; }
 async function q(p) { const { data, error } = await p; if (error) { toast(error.message); throw error; } return data; }
 
-let TAB = "enquiries", UNITS = [];
+let TAB = "enquiries", UNITS = [], CUSTOMERS = [];
+const money = (n) => n == null ? "" : (n < 0 ? "-$" : "$") + Math.abs(Number(n)).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+async function fn(name, body) {
+  const { data: { session } } = await sb.auth.getSession();
+  const r = await fetch(FN + "/" + name, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token, apikey: "sb_publishable_Ru1WwN93IIT-lN7V2yXYBQ_K_0M9fxB" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || "Request failed"); return j;
+}
+const UNIT_TYPES = ["compact","standard","luxury","all-access","kitchen","bath-box","bath-trailer","site-toilet","shower","other"];
 
 async function start() {
   const { data: { session } } = await sb.auth.getSession();
@@ -76,13 +83,17 @@ async function start() {
   document.getElementById("app").innerHTML = `
   <header><div class="bar"><strong>Wheelie Bathrooms admin</strong><span class="small muted">${h(session.user.email)}</span>
     <a class="btn sec sm" href="../" target="_blank">View site</a><button class="btn sec sm" id="out">Sign out</button></div>
-  <nav class="tabs">${[["enquiries","Enquiries"],["hires","Hires"],["units","Units"],["posts","Blog"],["faqs","FAQs"],["log","Email log"]].map(([k,l]) => `<button data-tab="${k}">${l}</button>`).join("")}</nav></header>
+  <nav class="tabs">${[["enquiries","Enquiries"],["hires","Hires"],["billing","Billing"],["customers","Customers"],["units","Fleet"],["posts","Blog"],["faqs","FAQs"],["log","Email log"]].map(([k,l]) => `<button data-tab="${k}">${l}</button>`).join("")}</nav></header>
   <main id="view"></main><dialog id="dlg"></dialog>`;
   $("#out").onclick = () => sb.auth.signOut().then(() => location.reload());
   document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => show(b.dataset.tab));
   UNITS = await q(sb.from("units").select("*").order("code"));
+  CUSTOMERS = await q(sb.from("customers").select("*").order("name"));
+  const xp = new URLSearchParams(location.search);
+  if (xp.get("xero")) { toast(xp.get("msg") || xp.get("xero")); history.replaceState(null, "", location.pathname); return show("billing"); }
   const m = location.hash.match(/^#(enquiry|hire)-(\d+)/);
-  if (m) { await show(m[1] === "hire" ? "hires" : "enquiries"); m[1] === "hire" ? editHire(+m[2]) : openEnquiry(+m[2]); }
+  if (location.hash === "#billing") show("billing");
+  else if (m) { await show(m[1] === "hire" ? "hires" : "enquiries"); m[1] === "hire" ? editHire(+m[2]) : openEnquiry(+m[2]); }
   else show("enquiries");
 }
 
@@ -103,7 +114,7 @@ sb.auth.onAuthStateChange((ev) => { if (ev === "PASSWORD_RECOVERY") { const p = 
 async function show(tab) {
   TAB = tab; document.querySelectorAll("[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
   const v = $("#view"); v.innerHTML = "<p class='muted'>Loading…</p>";
-  await ({ enquiries: enquiriesView, hires: hiresView, units: unitsView, posts: postsView, faqs: faqsView, log: logView })[tab](v);
+  await ({ enquiries: enquiriesView, hires: hiresView, billing: billingView, customers: customersView, units: unitsView, posts: postsView, faqs: faqsView, log: logView })[tab](v);
 }
 
 // ---------------- Enquiries ----------------
@@ -139,68 +150,124 @@ async function openEnquiry(id) {
 
 // ---------------- Hires ----------------
 let HIRES = [];
+const ACTIVE = ["booked", "on_hire"];
 async function hiresView(v) {
   const filter = sessionStorage.getItem("hireFilter") || "active";
-  let qb = sb.from("hires").select("*, units(code,type,name)").order("start_date", { ascending: false }).limit(300);
-  if (filter === "active") qb = qb.in("status", ["booked", "on_hire"]);
+  let qb = sb.from("hires").select("*, customers(name,type), hire_items(id,unit_id,off_date,units(code)), invoices(id,kind,xero_status,amount_due,subtotal)").order("start_date", { ascending: false }).limit(300);
+  if (filter === "active") qb = qb.in("status", ACTIVE);
   HIRES = await q(qb);
-  const onHire = HIRES.filter(x => x.status === "on_hire").length, active = UNITS.filter(u => u.active).length;
-  const ending = HIRES.filter(x => ["booked","on_hire"].includes(x.status) && x.end_date && daysTo(x.end_date) <= 7).length;
-  const unsigned = HIRES.filter(x => ["booked","on_hire"].includes(x.status) && x.agreement_status !== "signed").length;
+  const onHireUnits = new Set(HIRES.filter(x => x.status === "on_hire").flatMap(x => (x.hire_items || []).filter(i => !i.off_date).map(i => i.unit_id)));
+  const active = UNITS.filter(u => u.active).length;
+  const ending = HIRES.filter(x => ACTIVE.includes(x.status) && x.end_date && daysTo(x.end_date) <= 7).length;
+  const unsigned = HIRES.filter(x => ACTIVE.includes(x.status) && x.agreement_status !== "signed").length;
+  const awaiting = (x) => x.hire_type === "residential" && x.status === "booked" && !(x.invoices || []).some(i => i.xero_status === "PAID" || i.kind === "manual");
   v.innerHTML = `<div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Hires</h2>
     <select id="hf" style="width:auto"><option value="active">Booked and on hire</option><option value="all">All</option></select><button class="btn" id="nh">New hire</button></div>
-    <div class="kpis"><div class="kpi"><span class="muted small">On hire</span><b>${onHire}${active ? ` / ${active}` : ""}</b><span class="small muted">${active ? Math.round(onHire / active * 100) + "% utilised" : "add units to see utilisation"}</span></div>
+    <div class="kpis"><div class="kpi"><span class="muted small">Fleet on hire</span><b>${onHireUnits.size} / ${active}</b><span class="small muted">${active ? Math.round(onHireUnits.size / active * 100) : 0}% utilised</span></div>
     <div class="kpi"><span class="muted small">Ending within 7 days</span><b>${ending}</b></div><div class="kpi"><span class="muted small">Agreement not signed</span><b>${unsigned}</b></div></div>
-    <table><thead><tr><th>Customer</th><th class="hide-sm">Unit</th><th>Dates</th><th>Status</th><th class="hide-sm">Agreement</th></tr></thead><tbody>
-    ${HIRES.map(x => { const dl = daysTo(x.end_date); return `<tr class="click" data-id="${x.id}"><td><strong>${h(x.customer_name)}</strong><br><span class="small muted">${h(x.site_address)}</span></td>
-      <td class="hide-sm">${x.units ? h(x.units.code) : "<span class='muted'>none</span>"}</td>
-      <td>${fmt(x.start_date)} to ${x.end_date ? fmt(x.end_date) : "open"}${dl != null && ["booked","on_hire"].includes(x.status) ? `<br><span class="small ${dl <= 2 ? "" : "muted"}" style="${dl <= 2 ? "color:var(--red);font-weight:700" : ""}">${dl < 0 ? Math.abs(dl) + " days overdue" : dl + " days left"}</span>` : ""}</td>
-      <td><span class="pill ${x.status}">${x.status.replace("_", " ")}</span></td><td class="hide-sm"><span class="pill ${x.agreement_status}">${x.agreement_status.replace("_", " ")}</span></td></tr>`; }).join("") || `<tr><td colspan="5" class="muted">No hires yet. Use New hire, or Create hire from an enquiry.</td></tr>`}
+    <table><thead><tr><th>Customer / site</th><th class="hide-sm">Assets</th><th>Dates</th><th>Status</th><th class="hide-sm">Agreement</th></tr></thead><tbody>
+    ${HIRES.map(x => { const dl = daysTo(x.end_date); return `<tr class="click" data-id="${x.id}"><td><strong>${h(x.customers?.name || x.customer_name)}</strong>${x.customers && x.customers.name !== x.customer_name ? `<br><span class="small">${h(x.customer_name)}</span>` : ""}<br><span class="small muted">${h(x.site_address)}${x.billing_ref ? " · " + h(x.billing_ref) : ""}</span></td>
+      <td class="hide-sm">${(x.hire_items || []).map(i => h(i.units?.code)).join(", ") || "<span class='muted'>none</span>"}</td>
+      <td>${fmt(x.start_date)} to ${x.end_date ? fmt(x.end_date) : "open"}${dl != null && ACTIVE.includes(x.status) ? `<br><span class="small ${dl <= 2 ? "" : "muted"}" style="${dl <= 2 ? "color:var(--red);font-weight:700" : ""}">${dl < 0 ? Math.abs(dl) + " days overdue" : dl + " days left"}</span>` : ""}</td>
+      <td><span class="pill ${x.status}">${x.status.replace("_", " ")}</span> <span class="pill">${x.hire_type}</span>${awaiting(x) ? `<br><span class="pill new">awaiting payment</span>` : ""}</td><td class="hide-sm"><span class="pill ${x.agreement_status}">${x.agreement_status.replace("_", " ")}</span></td></tr>`; }).join("") || `<tr><td colspan="5" class="muted">No hires yet. Use New hire, or Create hire from an enquiry.</td></tr>`}
     </tbody></table>`;
   $("#hf").value = filter; $("#hf").onchange = (e) => { sessionStorage.setItem("hireFilter", e.target.value); show("hires"); };
   $("#nh").onclick = () => editHire(null, {});
   v.querySelectorAll("tr[data-id]").forEach(r => r.onclick = () => editHire(+r.dataset.id));
 }
+
 async function editHire(id, preset = {}) {
-  const x = id ? await q(sb.from("hires").select("*").eq("id", id).single()) : { status: "booked", reminders_enabled: true, agreement_status: "not_sent", ...preset };
+  const x = id ? await q(sb.from("hires").select("*").eq("id", id).single())
+    : { status: "booked", reminders_enabled: true, agreement_status: "not_sent", hire_type: "trade", bill_mode: "arrears", billing_cycle_days: 28, terms_days: 14, ...preset };
+  let items = id ? await q(sb.from("hire_items").select("*").eq("hire_id", id).order("id")) : [];
+  let charges = id ? await q(sb.from("hire_charges").select("*").eq("hire_id", id).order("charge_date")) : [];
+  const invs = id ? await q(sb.from("invoices").select("*").eq("hire_id", id).order("created_at", { ascending: false })) : [];
+  if (!id && preset.unit_id) items = [{ unit_id: preset.unit_id, rate_per_day: UNITS.find(u => u.id === preset.unit_id)?.rate_per_day || 60, on_date: preset.start_date || today(), off_date: null, billed_until: null }];
+  const removed = [];
   const d = $("#dlg");
-  const unitOpts = `<option value="">Not assigned</option>` + UNITS.filter(u => u.active || u.id === x.unit_id).map(u => `<option value="${u.id}" ${u.id === x.unit_id ? "selected" : ""}>${h(u.code)} · ${h(u.name || u.type)}</option>`).join("");
   const val = (k) => h(x[k] ?? "");
+  const custOpts = `<option value="">Choose who pays…</option>` + CUSTOMERS.filter(c => c.active || c.id === x.customer_id).map(c => `<option value="${c.id}" ${c.id === x.customer_id ? "selected" : ""}>${h(c.name)} (${c.type})</option>`).join("");
+  const unitOpts = (sel) => UNITS.filter(u => u.active || u.id === sel).map(u => `<option value="${u.id}" ${u.id === sel ? "selected" : ""}>${h(u.code)} · ${h(u.name || u.type)}</option>`).join("");
   d.innerHTML = `<form method="dialog" id="hf2"><h2>${id ? "Hire #" + id : "New hire"}</h2>
-    <div class="g2"><label>Customer name<input name="customer_name" required value="${val("customer_name")}"></label><label>Company<input name="company" value="${val("company")}"></label>
-    <label>Email<input name="email" type="email" value="${val("email")}"></label><label>Phone<input name="phone" value="${val("phone")}"></label></div>
+    <div class="card"><strong>Who pays</strong>
+    <div class="g2" style="margin-top:8px"><label>Paying customer <span class="muted small">(<a href="#" id="newcust">add new</a>)</span><select name="customer_id">${custOpts}</select></label><label>Claim / PO / job ref (goes on invoices)<input name="billing_ref" value="${val("billing_ref")}"></label></div>
+    <div class="g3"><label>Type<select name="hire_type"><option value="trade" ${x.hire_type === "trade" ? "selected" : ""}>Trade (builder, insurer)</option><option value="residential" ${x.hire_type === "residential" ? "selected" : ""}>Residential (pay before delivery)</option></select></label>
+    <label>Bill<select name="bill_mode"><option value="arrears" ${x.bill_mode === "arrears" ? "selected" : ""}>In arrears</option><option value="advance" ${x.bill_mode === "advance" ? "selected" : ""}>In advance</option></select></label>
+    <label>Every (days) / terms (days)<span class="row" style="gap:6px"><input name="billing_cycle_days" type="number" min="1" value="${val("billing_cycle_days")}"><input name="terms_days" type="number" min="0" value="${val("terms_days")}"></span></label></div></div>
+    <div class="card"><strong>On site</strong>
+    <div class="g2" style="margin-top:8px"><label>Occupant / site contact<input name="customer_name" required value="${val("customer_name")}"></label><label>Company<input name="company" value="${val("company")}"></label>
+    <label>Email (agreement and reminders)<input name="email" type="email" value="${val("email")}"></label><label>Phone<input name="phone" value="${val("phone")}"></label></div>
     <label>Site address<input name="site_address" required value="${val("site_address")}"></label>
-    <div class="g3"><label>Unit<select name="unit_id">${unitOpts}</select></label><label>Start date<input name="start_date" type="date" required value="${val("start_date")}"></label><label>End date<input name="end_date" type="date" value="${val("end_date")}"></label></div>
-    <div class="g3"><label>Weekly rate ex GST<input name="weekly_rate_ex_gst" type="number" step="0.01" value="${val("weekly_rate_ex_gst")}"></label><label>Delivery fee ex GST<input name="delivery_fee_ex_gst" type="number" step="0.01" value="${val("delivery_fee_ex_gst")}"></label><label>PO / claim / job ref<input name="billing_ref" value="${val("billing_ref")}"></label></div>
+    <div class="g3"><label>Start date<input name="start_date" type="date" required value="${val("start_date")}"></label><label>Planned end<input name="end_date" type="date" value="${val("end_date")}"></label><label>Mobilisation ex GST<input name="delivery_fee_ex_gst" type="number" step="0.01" value="${val("delivery_fee_ex_gst")}" ${x.mobilisation_billed ? "disabled title='Already invoiced'" : ""}></label></div></div>
+    <div class="card"><div class="row"><strong class="grow">Assets on this hire</strong><button type="button" class="btn sec sm" id="additem">Add asset</button></div>
+      <table style="margin-top:8px"><thead><tr><th>Asset</th><th>$/day ex GST</th><th>On hire</th><th>Off hire</th><th class="small">Billed to</th><th></th></tr></thead><tbody id="items"></tbody></table>
+      <p class="small muted">Off hire = the day it was collected. Billing stops the day before.</p></div>
+    <div class="card"><div class="row"><strong class="grow">Extra charges</strong><button type="button" class="btn sec sm" id="addch">Add charge</button></div>
+      <table style="margin-top:8px"><thead><tr><th>Description</th><th>Amount ex GST</th><th>Date</th><th></th></tr></thead><tbody id="charges"></tbody></table></div>
     <div class="g2"><label>Status<select name="status">${["booked","on_hire","ended","cancelled"].map(s => `<option value="${s}" ${s === x.status ? "selected" : ""}>${s.replace("_"," ")}</option>`).join("")}</select></label>
-    <label class="check" style="margin-top:26px"><input type="checkbox" name="reminders_enabled" ${x.reminders_enabled ? "checked" : ""}> Email the customer 7 and 2 days before the end date</label></div>
+    <label class="check" style="margin-top:26px"><input type="checkbox" name="reminders_enabled" ${x.reminders_enabled ? "checked" : ""}> Email the site contact 7 and 2 days before the end date</label></div>
     <label>Notes<textarea name="notes">${val("notes")}</textarea></label>
     ${id ? `<div class="card"><div class="row"><strong class="grow">Hire agreement: <span class="pill ${x.agreement_status}">${x.agreement_status.replace("_"," ")}</span></strong>
-      ${x.agreement_status !== "signed" ? `<button type="button" class="btn sm" id="sendag">${x.agreement_status === "sent" ? "Resend" : "Email"} agreement to customer</button><button type="button" class="btn sec sm" id="copyag">Copy signing link</button>` : ""}</div>
+      ${x.agreement_status !== "signed" ? `<button type="button" class="btn sm" id="sendag">${x.agreement_status === "sent" ? "Resend" : "Email"} agreement</button><button type="button" class="btn sec sm" id="copyag">Copy signing link</button>` : ""}</div>
       ${x.agreement_sent_at ? `<p class="small muted">Sent ${fmtT(x.agreement_sent_at)}</p>` : ""}
       ${x.agreement_status === "signed" ? `<p>Signed by <strong>${h(x.signed_name)}</strong> on ${fmtT(x.signed_at)}${x.licence_number ? ` · Licence ${h(x.licence_number)}` : ""}</p><img class="sig" src="${x.signature_png}" alt="signature"><p><button type="button" class="btn sec sm" id="lic">View licence</button></p>` : ""}
-      ${x.reminder_7_sent_at || x.reminder_2_sent_at ? `<p class="small muted">Reminders: ${x.reminder_7_sent_at ? "7-day " + fmtT(x.reminder_7_sent_at) : ""} ${x.reminder_2_sent_at ? " · 2-day " + fmtT(x.reminder_2_sent_at) : ""}</p>` : ""}</div>` : `<p class="small muted">Save the hire first, then you can email the agreement.</p>`}
-    <div class="row"><button class="btn" value="save">Save</button><span class="grow"></span>${id ? `<button class="btn danger sm" value="delete" formnovalidate>Delete</button>` : ""}<button class="btn sec" value="cancel" formnovalidate>Close</button></div></form>`;
+      ${x.reminder_7_sent_at || x.reminder_2_sent_at ? `<p class="small muted">Reminders: ${x.reminder_7_sent_at ? "7-day " + fmtT(x.reminder_7_sent_at) : ""} ${x.reminder_2_sent_at ? " · 2-day " + fmtT(x.reminder_2_sent_at) : ""}</p>` : ""}</div>
+      <div class="card"><strong>Invoices</strong>${invs.length ? `<table style="margin-top:8px"><tbody>${invs.map(i => `<tr><td>${fmt(i.invoice_date)}</td><td>${h(i.xero_number || "draft")}</td><td>${i.kind}${i.period_from ? `<br><span class="small muted">${fmt(i.period_from)} to ${fmt(i.period_to)}</span>` : ""}</td><td>${money(i.subtotal)}</td><td><span class="pill ${i.xero_status === "PAID" ? "won" : i.xero_status === "VOIDED" ? "lost" : ""}">${h(i.xero_status || i.kind)}</span></td></tr>`).join("")}</tbody></table>` : `<p class="small muted">Nothing invoiced yet. Invoices are raised from the Billing tab.</p>`}</div>` : `<p class="small muted">Save the hire first, then you can email the agreement.</p>`}
+    <div class="row"><button class="btn" value="save">Save</button><span class="grow"></span>${id && !invs.length ? `<button class="btn danger sm" value="delete" formnovalidate>Delete</button>` : ""}<button class="btn sec" value="cancel" formnovalidate>Close</button></div></form>`;
   d.showModal();
   const f = $("#hf2");
+
+  const drawItems = () => { $("#items").innerHTML = items.map((it, i) => `<tr data-i="${i}">
+      <td><select data-k="unit_id" ${it.billed_until ? "disabled" : ""}>${unitOpts(it.unit_id)}</select></td>
+      <td><input data-k="rate_per_day" type="number" step="0.01" value="${it.rate_per_day ?? ""}" style="width:90px" ${it.billed_until ? "disabled title='Already invoiced at this rate'" : ""}></td>
+      <td><input data-k="on_date" type="date" value="${it.on_date || ""}" ${it.billed_until ? "disabled" : ""}></td>
+      <td><input data-k="off_date" type="date" value="${it.off_date || ""}"></td>
+      <td class="small">${it.billed_until ? fmt(it.billed_until) : "-"}</td>
+      <td>${it.billed_until ? "" : `<button type="button" class="btn sec sm" data-rm="${i}">✕</button>`}</td></tr>`).join("") || `<tr><td colspan="6" class="muted small">Add the unit(s) going to this site.</td></tr>`;
+    $("#items").querySelectorAll("[data-k]").forEach(el => el.onchange = () => { const it = items[+el.closest("tr").dataset.i]; it[el.dataset.k] = el.value || null; if (el.dataset.k === "unit_id") { it.unit_id = +el.value; it.rate_per_day = UNITS.find(u => u.id === it.unit_id)?.rate_per_day ?? it.rate_per_day; drawItems(); } });
+    $("#items").querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { const [r] = items.splice(+b.dataset.rm, 1); if (r.id) removed.push(r.id); drawItems(); });
+  };
+  const drawCharges = () => { $("#charges").innerHTML = charges.map((c, i) => `<tr data-i="${i}"><td><input data-k="description" value="${h(c.description)}" ${c.invoice_id ? "disabled" : ""}></td><td><input data-k="amount_ex_gst" type="number" step="0.01" value="${c.amount_ex_gst ?? ""}" style="width:100px" ${c.invoice_id ? "disabled" : ""}></td><td><input data-k="charge_date" type="date" value="${c.charge_date || today()}" ${c.invoice_id ? "disabled" : ""}></td><td>${c.invoice_id ? "<span class='pill won'>invoiced</span>" : `<button type="button" class="btn sec sm" data-rm="${i}">✕</button>`}</td></tr>`).join("") || `<tr><td colspan="4" class="muted small">Relocations, pump-outs, cleaning, damage. They go on the next invoice.</td></tr>`;
+    $("#charges").querySelectorAll("[data-k]").forEach(el => el.onchange = () => { charges[+el.closest("tr").dataset.i][el.dataset.k] = el.value || null; });
+    $("#charges").querySelectorAll("[data-rm]").forEach(b => b.onclick = () => { const [r] = charges.splice(+b.dataset.rm, 1); if (r.id) r._delete = true, removedCharges.push(r.id); drawCharges(); });
+  };
+  const removedCharges = [];
+  drawItems(); drawCharges();
+  $("#additem").onclick = () => { const u = UNITS.find(u => u.active && !items.some(i => i.unit_id === u.id)) || UNITS[0]; items.push({ unit_id: u.id, rate_per_day: u.rate_per_day, on_date: f.start_date.value || today(), off_date: null, billed_until: null }); drawItems(); };
+  $("#addch").onclick = () => { charges.push({ description: "", amount_ex_gst: null, charge_date: today() }); drawCharges(); };
+  f.customer_id.onchange = () => { const c = CUSTOMERS.find(c => c.id === +f.customer_id.value); if (!c) return; f.hire_type.value = c.type; f.bill_mode.value = c.type === "residential" ? "advance" : c.bill_mode; f.billing_cycle_days.value = c.billing_cycle_days; f.terms_days.value = c.type === "residential" ? 0 : c.terms_days; if (!f.customer_name.value && c.type === "residential") f.customer_name.value = c.name; };
+  $("#newcust").onclick = (e) => { e.preventDefault(); const n = prompt("New paying customer name (exactly as it should appear in Xero)"); if (!n) return; const t = confirm("Is this a trade customer (builder, insurer, restorer)?\nOK = trade, Cancel = residential") ? "trade" : "residential";
+    sb.from("customers").insert({ name: n.trim(), type: t, terms_days: t === "trade" ? 14 : 0, bill_mode: t === "residential" ? "advance" : "arrears" }).select().single().then(({ data, error }) => { if (error) return toast(error.message); CUSTOMERS.push(data); CUSTOMERS.sort((a, b) => a.name.localeCompare(b.name)); const o = document.createElement("option"); o.value = data.id; o.textContent = `${data.name} (${data.type})`; f.customer_id.appendChild(o); f.customer_id.value = data.id; f.customer_id.onchange(); }); };
   f.onsubmit = (e) => { if (e.submitter?.value === "save" && !f.reportValidity()) e.preventDefault(); };
   if ($("#sendag")) $("#sendag").onclick = async () => {
-    const dirty = formData(f); if (!dirty.email) return toast("Add an email address and save first");
+    if (!f.email.value) return toast("Add an email address and save first");
     $("#sendag").disabled = true;
-    const { data: { session } } = await sb.auth.getSession();
-    const r = await fetch(FN + "/agreement", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token, apikey: "sb_publishable_Ru1WwN93IIT-lN7V2yXYBQ_K_0M9fxB" }, body: JSON.stringify({ action: "send", hire_id: id }) });
-    const j = await r.json(); toast(r.ok ? "Agreement emailed" : j.error); d.close("cancel"); show("hires");
+    try { await fn("agreement", { action: "send", hire_id: id }); toast("Agreement emailed"); } catch (e) { toast(e.message); }
+    d.close("cancel"); show("hires");
   };
   if ($("#copyag")) $("#copyag").onclick = () => { navigator.clipboard.writeText(location.origin + location.pathname.replace(/admin\/?$/, "") + "sign/?t=" + x.agreement_token); toast("Link copied"); };
   if ($("#lic")) $("#lic").onclick = async () => { const { data, error } = await sb.storage.from("licences").createSignedUrl(x.licence_path, 300); if (error) return toast(error.message); window.open(data.signedUrl, "_blank"); };
   d.onclose = async () => {
     if (d.returnValue === "save") {
       const o = formData(f);
-      ["unit_id", "weekly_rate_ex_gst", "delivery_fee_ex_gst"].forEach(k => o[k] = o[k] == null ? null : Number(o[k]));
+      ["customer_id", "delivery_fee_ex_gst", "billing_cycle_days", "terms_days"].forEach(k => { if (k in o) o[k] = o[k] == null ? null : Number(o[k]); });
+      if (x.mobilisation_billed) delete o.delivery_fee_ex_gst;
+      o.unit_id = items[0]?.unit_id || null;
       if (preset.enquiry_id && !id) o.enquiry_id = preset.enquiry_id;
-      const before = id ? x.end_date : null;
-      if (id && o.end_date !== before) { o.reminder_7_sent_at = null; o.reminder_2_sent_at = null; }
-      await q(id ? sb.from("hires").update(o).eq("id", id) : sb.from("hires").insert(o));
+      if (id && o.end_date !== x.end_date) { o.reminder_7_sent_at = null; o.reminder_2_sent_at = null; }
+      const saved = id ? (await q(sb.from("hires").update(o).eq("id", id).select("id").single())) : (await q(sb.from("hires").insert(o).select("id").single()));
+      const hid = saved.id;
+      for (const it of items) {
+        const row = { hire_id: hid, unit_id: +it.unit_id, rate_per_day: Number(it.rate_per_day || 0), on_date: it.on_date || o.start_date, off_date: it.off_date || null };
+        if (it.id) { if (it.billed_until) { await q(sb.from("hire_items").update({ off_date: row.off_date }).eq("id", it.id)); } else await q(sb.from("hire_items").update(row).eq("id", it.id)); }
+        else await q(sb.from("hire_items").insert(row));
+      }
+      for (const rid of removed) await q(sb.from("hire_items").delete().eq("id", rid).is("billed_until", null));
+      for (const c of charges.filter(c => !c.invoice_id && c.description && c.amount_ex_gst != null)) {
+        const row = { hire_id: hid, description: c.description, amount_ex_gst: Number(c.amount_ex_gst), charge_date: c.charge_date || today() };
+        c.id ? await q(sb.from("hire_charges").update(row).eq("id", c.id)) : await q(sb.from("hire_charges").insert(row));
+      }
+      for (const cid of removedCharges) await q(sb.from("hire_charges").delete().eq("id", cid).is("invoice_id", null));
       if (preset.enquiry_id) await sb.from("enquiries").update({ status: "won" }).eq("id", preset.enquiry_id);
       toast("Saved"); show("hires");
     } else if (d.returnValue === "delete" && confirm("Delete this hire permanently?")) {
@@ -210,29 +277,116 @@ async function editHire(id, preset = {}) {
   };
 }
 
-// ---------------- Units ----------------
+// ---------------- Billing ----------------
+async function billingView(v) {
+  v.innerHTML = "<p class='muted'>Checking Xero and working out what's due…</p>";
+  let st, pv;
+  try { [st, pv] = await Promise.all([fn("billing", { action: "status" }), fn("billing", { action: "preview" })]); } catch (e) { v.innerHTML = `<p class="card">${h(e.message)}</p>`; return; }
+  const x = st.xero;
+  const invs = await q(sb.from("invoices").select("*, customers(name), hires(customer_name,site_address)").order("created_at", { ascending: false }).limit(150));
+  const owing = invs.filter(i => i.xero_status === "AUTHORISED" && Number(i.amount_due) > 0);
+  const overdue = owing.filter(i => i.due_date < today());
+  const xeroCard = x.connected
+    ? `<div class="card row"><span class="grow">Xero: connected to <strong>${h(x.tenant_name)}</strong>. Invoices are created as drafts only; approve and send them in Xero.</span><button class="btn sec sm" id="sync">Sync now</button><button class="btn sec sm" id="xdisc">Disconnect</button></div>`
+    : `<div class="card"><h3 style="margin-top:0">Connect Xero</h3>
+      ${x.app_configured ? "" : `<ol class="small"><li>Sign in at <a href="https://developer.xero.com/app/manage" target="_blank" rel="noopener">developer.xero.com</a> and create a new app called <strong>Wheelie Hire</strong> (Web app).</li>
+        <li>Set the redirect URI to <code>${h(x.callback_url)}</code></li><li>Copy the Client ID and generate a Client Secret, then paste both here.</li></ol>
+        <div class="g2"><label>Client ID<input id="cid" autocomplete="off"></label><label>Client secret<input id="csec" type="password" autocomplete="off"></label></div><button class="btn sm" id="saveapp">Save</button>`}
+      ${x.app_configured ? `<p>App saved. Connect and tick <strong>only the Wheelie Bathrooms organisation</strong>. Any other org ticked by mistake is disconnected automatically.</p><button class="btn" id="xconn">Connect to Xero</button> <button class="btn sec sm" id="reapp">Change app keys</button>` : ""}</div>`;
+  const due = pv.due;
+  v.innerHTML = `<div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Billing</h2><span class="muted small">Today ${fmt(pv.today)}</span></div>
+    ${xeroCard}
+    <div class="kpis"><div class="kpi"><span class="muted small">Ready to invoice</span><b>${due.filter(d => d.plans.length).length}</b></div>
+    <div class="kpi"><span class="muted small">Owing (approved in Xero)</span><b>${money(owing.reduce((s, i) => s + Number(i.amount_due), 0))}</b></div>
+    <div class="kpi"><span class="muted small">Overdue</span><b style="color:${overdue.length ? "var(--red)" : "inherit"}">${money(overdue.reduce((s, i) => s + Number(i.amount_due), 0))}</b><span class="small muted">${overdue.length} invoices</span></div></div>
+    <h3>Due today</h3>
+    ${due.length ? `<form id="bf">${due.map(dh => `<div class="card"><div class="row"><label class="check" style="margin:0"><input type="checkbox" name="hire" value="${dh.hire_id}" ${dh.plans.length && !dh.warnings.length ? "checked" : ""} ${dh.warnings.length || !dh.plans.length ? "disabled" : ""}></label>
+      <strong class="grow">${h(dh.customer || "No customer")} <span class="small muted">· ${h(dh.occupant)}, ${h(dh.site)}${dh.reference ? " · " + h(dh.reference) : ""}</span></strong><a href="#" data-hire="${dh.hire_id}" class="small">open hire</a></div>
+      ${dh.warnings.map(w => `<p class="small" style="color:var(--red);margin:6px 0 0">${h(w)}</p>`).join("")}
+      ${dh.plans.map(p => `<table style="margin-top:8px"><thead><tr><th>${p.kind === "credit" ? "Credit note" : "Invoice"} · ${p.kind}${p.kind !== "credit" ? ` · due ${fmt(p.due_date)}` : ""}</th><th style="text-align:right">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead><tbody>
+        ${p.lines.map(l => `<tr><td class="small" style="white-space:pre-line">${h(l.description)}</td><td style="text-align:right">${l.quantity}</td><td style="text-align:right">${money(l.unit_amount)}</td><td style="text-align:right">${money(l.quantity * l.unit_amount)}</td></tr>`).join("")}
+        <tr><td colspan="3" style="text-align:right"><strong>Subtotal ex GST</strong></td><td style="text-align:right"><strong>${p.kind === "credit" ? "-" : ""}${money(p.subtotal)}</strong></td></tr></tbody></table>`).join("")}</div>`).join("")}
+      <div class="row"><button class="btn" id="raise" type="button" ${x.connected ? "" : "disabled title='Connect Xero first'"}>Create drafts in Xero for ticked hires</button>
+      <button class="btn sec" id="manual" type="button">Mark ticked as billed elsewhere</button></div>
+      <p class="small muted">"Billed elsewhere" moves the hire's billed-to date on without touching Xero. Use it for periods already invoiced from Stay on Hire.</p></form>`
+      : `<p class="card muted">Nothing is due to invoice today.</p>`}
+    <h3 style="margin-top:24px">Invoices raised from this system</h3>
+    <table><thead><tr><th>Date</th><th>Number</th><th>Customer</th><th class="hide-sm">Hire</th><th style="text-align:right">Ex GST</th><th>Status</th></tr></thead><tbody>
+    ${invs.map(i => { const od = i.xero_status === "AUTHORISED" && Number(i.amount_due) > 0 && i.due_date < today(); return `<tr><td>${fmt(i.invoice_date)}</td><td>${h(i.xero_number || "-")}</td><td>${h(i.customers?.name)}</td><td class="hide-sm small">${h(i.hires?.site_address || "")}</td><td style="text-align:right">${money(i.subtotal)}</td>
+      <td><span class="pill ${i.xero_status === "PAID" ? "won" : od ? "lost" : i.xero_status === "VOIDED" ? "cancelled" : ""}">${h(od ? "overdue" : i.xero_status || i.kind)}</span>${i.xero_status === "AUTHORISED" ? `<br><span class="small muted">${money(i.amount_due)} due ${fmt(i.due_date)}</span>` : ""}</td></tr>`; }).join("") || `<tr><td colspan="6" class="muted">None yet.</td></tr>`}
+    </tbody></table>`;
+  v.querySelectorAll("[data-hire]").forEach(a => a.onclick = (e) => { e.preventDefault(); editHire(+a.dataset.hire); });
+  const picked = () => [...v.querySelectorAll("input[name=hire]:checked")].map(c => +c.value);
+  const run = async (mode) => {
+    const ids = picked(); if (!ids.length) return toast("Tick at least one hire");
+    if (mode === "manual" && !confirm(`Mark ${ids.length} hire(s) as already billed elsewhere? Nothing is sent to Xero.`)) return;
+    v.querySelectorAll("#raise,#manual").forEach(b => b.disabled = true);
+    try { const r = await fn("billing", { action: "raise", hire_ids: ids, mode }); const bad = r.results.filter(x => x.error);
+      toast(bad.length ? `${r.results.length - bad.length} done, ${bad.length} failed: ${bad[0].error}` : `${r.results.length} ${mode === "manual" ? "recorded" : "draft(s) created in Xero"}`); } catch (e) { toast(e.message); }
+    show("billing");
+  };
+  if ($("#raise")) $("#raise").onclick = () => run("xero");
+  if ($("#manual")) $("#manual").onclick = () => run("manual");
+  if ($("#sync")) $("#sync").onclick = async () => { try { const r = await fn("billing", { action: "sync" }); toast(`${r.updated} invoice(s) updated from Xero`); } catch (e) { toast(e.message); } show("billing"); };
+  if ($("#xdisc")) $("#xdisc").onclick = async () => { if (!confirm("Disconnect Xero? Billing stops until it's reconnected.")) return; await fn("billing", { action: "disconnect" }); show("billing"); };
+  if ($("#saveapp")) $("#saveapp").onclick = async () => { try { await fn("billing", { action: "save_app", client_id: $("#cid").value, client_secret: $("#csec").value }); toast("Saved"); show("billing"); } catch (e) { toast(e.message); } };
+  if ($("#reapp")) $("#reapp").onclick = () => { x.app_configured = false; billingView(v); };
+  if ($("#xconn")) $("#xconn").onclick = async () => { try { const r = await fn("billing", { action: "auth_url" }); location.href = r.url; } catch (e) { toast(e.message); } };
+}
+
+// ---------------- Customers ----------------
+async function customersView(v) {
+  CUSTOMERS = await q(sb.from("customers").select("*").order("name"));
+  v.innerHTML = `<div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Customers (who pays)</h2><button class="btn" id="nc">Add customer</button></div>
+    <p class="small muted">Loaded from the last 12 months of Wheelie Bathrooms invoices in Xero. Trade = builders, insurers, restorers. Residential = homeowners who pay before delivery.</p>
+    <table><thead><tr><th>Name</th><th>Type</th><th>Billing</th><th class="hide-sm">Xero</th><th></th></tr></thead><tbody>
+    ${CUSTOMERS.map(c => `<tr><td><strong>${h(c.name)}</strong>${c.email ? `<br><span class="small muted">${h(c.email)}</span>` : ""}</td><td><span class="pill">${c.type}</span>${c.active ? "" : " <span class='pill cancelled'>inactive</span>"}</td>
+      <td class="small">${c.type === "residential" ? "Up front, due on issue" : `${c.bill_mode === "advance" ? "In advance" : "In arrears"} every ${c.billing_cycle_days} days, ${c.terms_days}-day terms`}</td><td class="hide-sm small">${c.xero_contact_id ? "linked" : "<span class='muted'>created on first invoice</span>"}</td><td><button class="btn sec sm" data-c="${c.id}">Edit</button></td></tr>`).join("")}
+    </tbody></table>`;
+  $("#nc").onclick = () => editCustomer({ type: "trade", terms_days: 14, billing_cycle_days: 28, bill_mode: "arrears", active: true });
+  v.querySelectorAll("[data-c]").forEach(b => b.onclick = () => editCustomer(CUSTOMERS.find(c => c.id === +b.dataset.c)));
+}
+function editCustomer(c) {
+  const d = $("#dlg");
+  d.innerHTML = `<form method="dialog" id="cf"><h2>${c.id ? "Edit customer" : "Add customer"}</h2>
+    <label>Name (as it appears in Xero)<input name="name" required value="${h(c.name)}"></label>
+    <div class="g3"><label>Type<select name="type"><option value="trade" ${c.type === "trade" ? "selected" : ""}>Trade</option><option value="residential" ${c.type === "residential" ? "selected" : ""}>Residential</option></select></label>
+    <label>Bill<select name="bill_mode"><option value="arrears" ${c.bill_mode === "arrears" ? "selected" : ""}>In arrears</option><option value="advance" ${c.bill_mode === "advance" ? "selected" : ""}>In advance</option></select></label>
+    <label>Every (days)<input name="billing_cycle_days" type="number" min="1" value="${c.billing_cycle_days}"></label></div>
+    <div class="g3"><label>Payment terms (days)<input name="terms_days" type="number" min="0" value="${c.terms_days}"></label><label>Accounts email<input name="email" type="email" value="${h(c.email)}"></label><label>Phone<input name="phone" value="${h(c.phone)}"></label></div>
+    <label class="check"><input type="checkbox" name="active" ${c.active ? "checked" : ""}> Active</label>
+    <label>Notes<textarea name="notes">${h(c.notes)}</textarea></label>
+    <p class="small muted">New hires for this customer start with these settings. Changing them here doesn't change existing hires.</p>
+    <div class="row"><button class="btn" value="save">Save</button><span class="grow"></span><button class="btn sec" value="cancel" formnovalidate>Close</button></div></form>`;
+  d.showModal();
+  d.onclose = async () => { if (d.returnValue !== "save") return; const o = formData($("#cf")); o.terms_days = +o.terms_days; o.billing_cycle_days = +o.billing_cycle_days; if (o.type === "residential") { o.bill_mode = "advance"; o.terms_days = 0; }
+    await q(c.id ? sb.from("customers").update(o).eq("id", c.id) : sb.from("customers").insert(o)); toast("Saved"); show("customers"); };
+}
+
+// ---------------- Fleet ----------------
 async function unitsView(v) {
   UNITS = await q(sb.from("units").select("*").order("code"));
-  const busy = await q(sb.from("hires").select("unit_id, customer_name, end_date").in("status", ["booked", "on_hire"]));
+  const busy = await q(sb.from("hire_items").select("unit_id, off_date, hires!inner(customer_name, status, end_date)").is("off_date", null).in("hires.status", ACTIVE));
   const where = (id) => busy.find(b => b.unit_id === id);
-  v.innerHTML = `<div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Units</h2><button class="btn" id="nu">Add unit</button></div>
-    <table><thead><tr><th>Code</th><th>Type</th><th>Name</th><th>Now</th><th></th></tr></thead><tbody>
-    ${UNITS.map(u => { const b = where(u.id); return `<tr><td><strong>${h(u.code)}</strong></td><td>${h(u.type)}</td><td>${h(u.name)}</td><td>${!u.active ? "<span class='pill cancelled'>retired</span>" : b ? `<span class="pill on_hire">on hire</span> <span class="small">${h(b.customer_name)}${b.end_date ? " to " + fmt(b.end_date) : ""}</span>` : "<span class='pill'>available</span>"}</td><td><button class="btn sec sm" data-u="${u.id}">Edit</button></td></tr>`; }).join("") || `<tr><td colspan="5" class="muted">Add each unit in the fleet (for example C01 to C10 for compacts, S01 to S04 for trailers) so hires can be assigned and utilisation tracked.</td></tr>`}
+  v.innerHTML = `<div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Fleet</h2><button class="btn" id="nu">Add asset</button></div>
+    <table><thead><tr><th>Code</th><th>Type</th><th class="hide-sm">Default $/day</th><th>Now</th><th></th></tr></thead><tbody>
+    ${UNITS.map(u => { const b = where(u.id); return `<tr><td><strong>${h(u.code)}</strong>${u.notes ? `<br><span class="small muted">${h(u.notes)}</span>` : ""}</td><td>${h(u.name || u.type)}</td><td class="hide-sm">${money(u.rate_per_day)}</td><td>${!u.active ? "<span class='pill cancelled'>retired</span>" : b ? `<span class="pill on_hire">${b.hires.status.replace("_", " ")}</span> <span class="small">${h(b.hires.customer_name)}${b.hires.end_date ? " to " + fmt(b.hires.end_date) : ""}</span>` : "<span class='pill'>available</span>"}</td><td><button class="btn sec sm" data-u="${u.id}">Edit</button></td></tr>`; }).join("")}
     </tbody></table>`;
-  $("#nu").onclick = () => editUnit({ active: true, type: "compact" });
+  $("#nu").onclick = () => editUnit({ active: true, type: "compact", rate_per_day: 60 });
   v.querySelectorAll("[data-u]").forEach(b => b.onclick = () => editUnit(UNITS.find(u => u.id === +b.dataset.u)));
 }
 function editUnit(u) {
   const d = $("#dlg");
-  d.innerHTML = `<form method="dialog" id="uf"><h2>${u.id ? "Edit unit" : "Add unit"}</h2><div class="g3">
-    <label>Code<input name="code" required value="${h(u.code)}" placeholder="C01"></label>
-    <label>Type<select name="type">${["compact","standard","luxury","all-access"].map(t => `<option ${t === u.type ? "selected" : ""}>${t}</option>`).join("")}</select></label>
-    <label>Name<input name="name" value="${h(u.name)}" placeholder="Compact ensuite"></label></div>
+  d.innerHTML = `<form method="dialog" id="uf"><h2>${u.id ? "Edit asset" : "Add asset"}</h2><div class="g3">
+    <label>Code (as on invoices)<input name="code" required value="${h(u.code)}" placeholder="CMP6"></label>
+    <label>Type<select name="type">${UNIT_TYPES.map(t => `<option ${t === u.type ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+    <label>Default $/day ex GST<input name="rate_per_day" type="number" step="0.01" value="${u.rate_per_day ?? 60}"></label></div>
+    <label>Name<input name="name" value="${h(u.name)}" placeholder="Compact ensuite"></label>
     <label class="check"><input type="checkbox" name="active" ${u.active ? "checked" : ""}> In service</label>
     <label>Notes<textarea name="notes">${h(u.notes)}</textarea></label>
     <div class="row"><button class="btn" value="save">Save</button><span class="grow"></span><button class="btn sec" value="cancel" formnovalidate>Close</button></div></form>`;
   d.showModal();
-  d.onclose = async () => { if (d.returnValue !== "save") return; const o = formData($("#uf")); await q(u.id ? sb.from("units").update(o).eq("id", u.id) : sb.from("units").insert(o)); toast("Saved"); show("units"); };
+  d.onclose = async () => { if (d.returnValue !== "save") return; const o = formData($("#uf")); o.rate_per_day = Number(o.rate_per_day || 0); await q(u.id ? sb.from("units").update(o).eq("id", u.id) : sb.from("units").insert(o)); toast("Saved"); show("units"); };
 }
 
 // ---------------- Blog ----------------
