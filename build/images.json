@@ -1,0 +1,156 @@
+{
+ "compact-driveway": {
+  "w": 1600,
+  "h": 1200,
+  "sizes": [
+   480,
+   960,
+   1600
+  ]
+ },
+ "compact-backyard": {
+  "w": 1600,
+  "h": 1200,
+  "sizes": [
+   480,
+   960,
+   1600
+  ]
+ },
+ "compact-door-open": {
+  "w": 1600,
+  "h": 1200,
+  "sizes": [
+   480,
+   960,
+   1600
+  ]
+ },
+ "compact-interior": {
+  "w": 1600,
+  "h": 1200,
+  "sizes": [
+   480,
+   960,
+   1600
+  ]
+ },
+ "compact-narrow": {
+  "w": 1200,
+  "h": 1600,
+  "sizes": [
+   480,
+   960
+  ]
+ },
+ "compact-side-path": {
+  "w": 1200,
+  "h": 1600,
+  "sizes": [
+   480,
+   960
+  ]
+ },
+ "compact-garage": {
+  "w": 1600,
+  "h": 1200,
+  "sizes": [
+   480,
+   960,
+   1600
+  ]
+ },
+ "compact-front": {
+  "w": 1600,
+  "h": 1200,
+  "sizes": [
+   480,
+   960,
+   1600
+  ]
+ },
+ "compact-hot-water": {
+  "w": 1200,
+  "h": 1600,
+  "sizes": [
+   480,
+   960
+  ]
+ },
+ "compact-shower": {
+  "w": 1200,
+  "h": 1600,
+  "sizes": [
+   480,
+   960
+  ]
+ },
+ "compact-toilet": {
+  "w": 1200,
+  "h": 1600,
+  "sizes": [
+   480,
+   960
+  ]
+ },
+ "standard-trailer": {
+  "w": 548,
+  "h": 550,
+  "sizes": [
+   480
+  ]
+ },
+ "standard-trailer-2": {
+  "w": 413,
+  "h": 550,
+  "sizes": [
+   480
+  ]
+ },
+ "standard-shower": {
+  "w": 413,
+  "h": 550,
+  "sizes": [
+   480
+  ]
+ },
+ "standard-basin": {
+  "w": 325,
+  "h": 500,
+  "sizes": [
+   480
+  ]
+ },
+ "compact-classic": {
+  "w": 472,
+  "h": 500,
+  "sizes": [
+   480
+  ]
+ },
+ "compact-classic-toilet": {
+  "w": 335,
+  "h": 500,
+  "sizes": [
+   480
+  ]
+ },
+ "floorplan-compact": {
+  "w": 650,
+  "h": 379,
+  "sizes": [
+   480
+  ]
+ },
+ "floorplan-standard": {
+  "w": 750,
+  "h": 402,
+  "sizes": [
+   480
+  ]
+ },
+ "logo": {
+  "w": 354,
+  "h": 157
+ }
+}

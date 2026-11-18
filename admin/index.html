@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Wheelie Bathrooms Admin</title>
+<link rel="icon" href="../favicon.png">
+<style>
+:root{--blue:#1373a0;--blue2:#1999ce;--ink:#1d1b1c;--muted:#5a6168;--line:#dfe5ea;--alt:#f2f7fa;--red:#c62828;--green:#2e7d32;--amber:#b26a00}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);background:var(--alt)}
+a{color:var(--blue)}button,input,select,textarea{font:inherit}
+header{background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.bar{display:flex;align-items:center;gap:12px;max-width:1200px;margin:0 auto;padding:10px 16px;flex-wrap:wrap}
+.bar strong{color:var(--blue);font-size:1.1rem;margin-right:auto}
+nav.tabs{display:flex;gap:4px;overflow-x:auto;max-width:1200px;margin:0 auto;padding:0 12px}
+nav.tabs button{background:none;border:0;border-bottom:3px solid transparent;padding:10px 12px;cursor:pointer;font-weight:600;color:var(--muted);white-space:nowrap}
+nav.tabs button.on{color:var(--blue);border-color:var(--blue)}
+main{max-width:1200px;margin:0 auto;padding:16px}
+.btn{background:var(--blue);color:#fff;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:600;text-decoration:none;display:inline-block}
+.btn.sec{background:#fff;color:var(--blue);border:1.5px solid var(--blue)}.btn.danger{background:var(--red)}.btn.sm{padding:5px 10px;font-size:.88rem}
+.btn:disabled{opacity:.5;cursor:default}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grow{flex:1}
+.muted{color:var(--muted)}.small{font-size:.85rem}
+.pill{display:inline-block;border-radius:999px;padding:2px 9px;font-size:.78rem;font-weight:700;background:#e8eef2;color:#334}
+.pill.new,.pill.sent{background:#fff3cd;color:#7a5200}.pill.won,.pill.signed,.pill.on_hire{background:#dff3e3;color:#1f5f28}.pill.lost,.pill.cancelled,.pill.spam{background:#fde2e1;color:#8a1c1c}.pill.booked,.pill.quoted,.pill.contacted{background:#e1effa;color:#0d5476}
+label{display:block;font-weight:600;font-size:.85rem;margin-bottom:10px}
+input,select,textarea{display:block;width:100%;margin-top:4px;padding:9px 10px;border:1.5px solid #c9d3db;border-radius:8px;background:#fff}
+textarea{min-height:90px}
+.g2{display:grid;gap:0 12px}@media(min-width:700px){.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:1fr 1fr 1fr}}
+.g3{display:grid;gap:0 12px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.8rem;text-transform:uppercase;color:var(--muted);background:#f8fafb}
+tr.click{cursor:pointer}tr.click:hover{background:#f6fafc}
+.login{max-width:380px;margin:10vh auto;background:#fff;padding:28px;border-radius:12px;border:1px solid var(--line)}
+dialog{border:0;border-radius:12px;padding:0;width:min(760px,96vw);max-height:92vh}
+dialog::backdrop{background:rgba(0,0,0,.4)}
+dialog form{padding:18px 20px}
+dialog h2{margin:0 0 12px}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;z-index:99}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px}.kpi b{display:block;font-size:1.6rem}
+.check{display:flex;gap:8px;align-items:center}.check input{width:auto;margin:0}
+.preview{border:1px solid var(--line);border-radius:8px;padding:12px;background:#fafcfd;max-height:400px;overflow:auto}
+.hide-sm{display:none}@media(min-width:800px){.hide-sm{display:table-cell}}
+img.sig{max-width:280px;border:1px solid var(--line);border-radius:6px;background:#fff}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+const sb = supabase.createClient("https://qakzwoopjnbwjqnyuiuo.supabase.co", "sb_publishable_Ru1WwN93IIT-lN7V2yXYBQ_K_0M9fxB");
+const FN = "https://qakzwoopjnbwjqnyuiuo.supabase.co/functions/v1";
+const IMAGES = ["compact-driveway","compact-backyard","compact-door-open","compact-interior","compact-narrow","compact-side-path","compact-garage","compact-front","standard-trailer","standard-trailer-2"];
+const $ = (s, el = document) => el.querySelector(s);
+const h = (s) => String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const fmt = (d) => d ? new Date(d.length === 10 ? d + "T00:00:00" : d).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }) : "";
+const fmtT = (d) => d ? new Date(d).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "";
+const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Melbourne" }).format(new Date());
+const daysTo = (d) => d ? Math.round((Date.parse(d + "T00:00:00Z") - Date.parse(today() + "T00:00:00Z")) / 864e5) : null;
+function toast(m) { const t = document.createElement("div"); t.className = "toast"; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); }
+function formData(f) { const o = {}; new FormData(f).forEach((v, k) => o[k] = String(v).trim() === "" ? null : String(v).trim()); f.querySelectorAll("input[type=checkbox]").forEach(c => o[c.name] = c.checked); return o; }
+async function q(p) { const { data, error } = await p; if (error) { toast(error.message); throw error; } return data; }
+
+let TAB = "enquiries", UNITS = [];
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return loginView();
+  const { data: ok } = await sb.rpc("is_admin");
+  if (!ok) { document.getElementById("app").innerHTML = `<div class="login"><h2>No access</h2><p>${h(session.user.email)} isn't on the admin list. Ask David to add you.</p><button class="btn sec" onclick="sb.auth.signOut().then(()=>location.reload())">Sign out</button></div>`; return; }
+  document.getElementById("app").innerHTML = `
+  <header><div class="bar"><strong>Wheelie Bathrooms admin</strong><span class="small muted">${h(session.user.email)}</span>
+    <a class="btn sec sm" href="../" target="_blank">View site</a><button class="btn sec sm" id="out">Sign out</button></div>
+  <nav class="tabs">${[["enquiries","Enquiries"],["hires","Hires"],["units","Units"],["posts","Blog"],["faqs","FAQs"],["log","Email log"]].map(([k,l]) => `<button data-tab="${k}">${l}</button>`).join("")}</nav></header>
+  <main id="view"></main><dialog id="dlg"></dialog>`;
+  $("#out").onclick = () => sb.auth.signOut().then(() => location.reload());
+  document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => show(b.dataset.tab));
+  UNITS = await q(sb.from("units").select("*").order("code"));
+  const m = location.hash.match(/^#(enquiry|hire)-(\d+)/);
+  if (m) { await show(m[1] === "hire" ? "hires" : "enquiries"); m[1] === "hire" ? editHire(+m[2]) : openEnquiry(+m[2]); }
+  else show("enquiries");
+}
+
+function loginView() {
+  document.getElementById("app").innerHTML = `<form class="login" id="lf"><h2 style="margin-top:0">Wheelie Bathrooms admin</h2>
+    <label>Email<input name="email" type="email" autocomplete="username" required></label>
+    <label>Password<input name="password" type="password" autocomplete="current-password" required minlength="8"></label>
+    <button class="btn" style="width:100%">Sign in</button>
+    <p class="small muted" style="margin-top:14px">First time? Enter your email and choose a password (8+ characters), then <a href="#" id="su">create my login</a>. Confirm it from the email, then sign in here.</p>
+    <p class="small"><a href="#" id="fp">Forgot password</a></p><p id="lm" class="small"></p></form>`;
+  const f = $("#lf"), msg = $("#lm");
+  f.onsubmit = async (e) => { e.preventDefault(); const { error } = await sb.auth.signInWithPassword({ email: f.email.value, password: f.password.value }); if (error) msg.textContent = error.message; else start(); };
+  $("#su").onclick = async (e) => { e.preventDefault(); if (!f.reportValidity()) return; const { error } = await sb.auth.signUp({ email: f.email.value, password: f.password.value, options: { emailRedirectTo: location.origin + location.pathname } }); msg.textContent = error ? error.message : "Check your email to confirm, then sign in."; };
+  $("#fp").onclick = async (e) => { e.preventDefault(); if (!f.email.value) { msg.textContent = "Type your email first."; return; } const { error } = await sb.auth.resetPasswordForEmail(f.email.value, { redirectTo: location.origin + location.pathname }); msg.textContent = error ? error.message : "Reset link sent if that email has a login."; };
+}
+sb.auth.onAuthStateChange((ev) => { if (ev === "PASSWORD_RECOVERY") { const p = prompt("Choose a new password (8+ characters)"); if (p) sb.auth.updateUser({ password: p }).then(({ error }) => toast(error ? error.message : "Password updated")); } });
+
+async function show(tab) {
+  TAB = tab; document.querySelectorAll("[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  const v = $("#view"); v.innerHTML = "<p class='muted'>Loading…</p>";
+  await ({ enquiries: enquiriesView, hires: hiresView, units: unitsView, posts: postsView, faqs: faqsView, log: logView })[tab](v);
+}
+
+// ---------------- Enquiries ----------------
+let ENQ = [];
+async function enquiriesView(v) {
+  const filter = sessionStorage.getItem("enqFilter") || "open";
+  let qb = sb.from("enquiries").select("*").order("created_at", { ascending: false }).limit(300);
+  if (filter === "open") qb = qb.in("status", ["new", "contacted", "quoted"]);
+  ENQ = await q(qb);
+  const cnt = (s) => ENQ.filter(e => e.status === s).length;
+  v.innerHTML = `<div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Enquiries</h2>
+    <select id="ef" style="width:auto"><option value="open">Open</option><option value="all">All (last 300)</option></select></div>
+    <div class="kpis"><div class="kpi"><span class="muted small">New</span><b>${cnt("new")}</b></div><div class="kpi"><span class="muted small">Contacted</span><b>${cnt("contacted")}</b></div><div class="kpi"><span class="muted small">Quoted</span><b>${cnt("quoted")}</b></div></div>
+    <table><thead><tr><th>Received</th><th>Name</th><th class="hide-sm">Suburb</th><th class="hide-sm">Unit / start</th><th>Status</th></tr></thead><tbody>
+    ${ENQ.map(e => `<tr class="click" data-id="${e.id}"><td>${fmtT(e.created_at)}</td><td><strong>${h(e.name)}</strong><br><span class="small muted">${h(e.customer_type || "")}${e.company ? " · " + h(e.company) : ""}</span></td><td class="hide-sm">${h(e.suburb)}</td><td class="hide-sm">${h(e.unit_interest || "Not sure")}<br><span class="small muted">${fmt(e.start_date)} ${h(e.duration || "")}</span></td><td><span class="pill ${e.status}">${e.status}</span></td></tr>`).join("") || `<tr><td colspan="5" class="muted">No enquiries.</td></tr>`}
+    </tbody></table>`;
+  $("#ef").value = filter; $("#ef").onchange = (e) => { sessionStorage.setItem("enqFilter", e.target.value); show("enquiries"); };
+  v.querySelectorAll("tr[data-id]").forEach(r => r.onclick = () => openEnquiry(+r.dataset.id));
+}
+async function openEnquiry(id) {
+  const e = ENQ.find(x => x.id === id) || await q(sb.from("enquiries").select("*").eq("id", id).single());
+  const d = $("#dlg"); const tel = (e.phone || "").replace(/[^\d+]/g, "");
+  d.innerHTML = `<form method="dialog" id="ef2"><h2>${h(e.name)}</h2>
+    <p><a class="btn sm" href="tel:${tel}">Call ${h(e.phone)}</a> ${e.email ? `<a class="btn sec sm" href="mailto:${h(e.email)}?subject=Your%20Wheelie%20Bathrooms%20quote">Email</a>` : ""}</p>
+    <table><tbody>${[["Received", fmtT(e.created_at)], ["Email", e.email], ["Type", e.customer_type], ["Company / claim", e.company], ["Suburb", e.suburb], ["Unit", e.unit_interest], ["Start", fmt(e.start_date)], ["Duration", e.duration], ["Message", e.message], ["Page", e.source_page]].filter(r => r[1]).map(([k, x]) => `<tr><th style="width:130px">${k}</th><td>${h(x).replace(/\n/g, "<br>")}</td></tr>`).join("")}</tbody></table>
+    <div class="g2" style="margin-top:12px"><label>Status<select name="status">${["new","contacted","quoted","won","lost","spam"].map(s => `<option ${s === e.status ? "selected" : ""}>${s}</option>`).join("")}</select></label></div>
+    <label>Notes<textarea name="notes">${h(e.notes)}</textarea></label>
+    <div class="row"><button class="btn" value="save">Save</button><button class="btn sec" value="hire" type="button" id="tohire">Create hire from this</button><span class="grow"></span><button class="btn sec" value="cancel" formnovalidate>Close</button></div></form>`;
+  d.showModal();
+  $("#tohire").onclick = () => { d.close(); editHire(null, { enquiry_id: e.id, customer_name: e.name, email: e.email, phone: e.phone, company: e.company, site_address: e.suburb, start_date: e.start_date }); };
+  d.onclose = async () => { if (d.returnValue === "save") { const f = formData($("#ef2")); await q(sb.from("enquiries").update({ status: f.status, notes: f.notes }).eq("id", e.id)); toast("Saved"); show("enquiries"); } history.replaceState(null, "", location.pathname); };
+}
+
+// ---------------- Hires ----------------
+let HIRES = [];
+async function hiresView(v) {
+  const filter = sessionStorage.getItem("hireFilter") || "active";
+  let qb = sb.from("hires").select("*, units(code,type,name)").order("start_date", { ascending: false }).limit(300);
+  if (filter === "active") qb = qb.in("status", ["booked", "on_hire"]);
+  HIRES = await q(qb);
+  const onHire = HIRES.filter(x => x.status === "on_hire").length, active = UNITS.filter(u => u.active).length;
+  const ending = HIRES.filter(x => ["booked","on_hire"].includes(x.status) && x.end_date && daysTo(x.end_date) <= 7).length;
+  const unsigned = HIRES.filter(x => ["booked","on_hire"].includes(x.status) && x.agreement_status !== "signed").length;
+  v.innerHTML = `<div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Hires</h2>
+    <select id="hf" style="width:auto"><option value="active">Booked and on hire</option><option value="all">All</option></select><button class="btn" id="nh">New hire</button></div>
+    <div class="kpis"><div class="kpi"><span class="muted small">On hire</span><b>${onHire}${active ? ` / ${active}` : ""}</b><span class="small muted">${active ? Math.round(onHire / active * 100) + "% utilised" : "add units to see utilisation"}</span></div>
+    <div class="kpi"><span class="muted small">Ending within 7 days</span><b>${ending}</b></div><div class="kpi"><span class="muted small">Agreement not signed</span><b>${unsigned}</b></div></div>
+    <table><thead><tr><th>Customer</th><th class="hide-sm">Unit</th><th>Dates</th><th>Status</th><th class="hide-sm">Agreement</th></tr></thead><tbody>
+    ${HIRES.map(x => { const dl = daysTo(x.end_date); return `<tr class="click" data-id="${x.id}"><td><strong>${h(x.customer_name)}</strong><br><span class="small muted">${h(x.site_address)}</span></td>
+      <td class="hide-sm">${x.units ? h(x.units.code) : "<span class='muted'>none</span>"}</td>
+      <td>${fmt(x.start_date)} to ${x.end_date ? fmt(x.end_date) : "open"}${dl != null && ["booked","on_hire"].includes(x.status) ? `<br><span class="small ${dl <= 2 ? "" : "muted"}" style="${dl <= 2 ? "color:var(--red);font-weight:700" : ""}">${dl < 0 ? Math.abs(dl) + " days overdue" : dl + " days left"}</span>` : ""}</td>
+      <td><span class="pill ${x.status}">${x.status.replace("_", " ")}</span></td><td class="hide-sm"><span class="pill ${x.agreement_status}">${x.agreement_status.replace("_", " ")}</span></td></tr>`; }).join("") || `<tr><td colspan="5" class="muted">No hires yet. Use New hire, or Create hire from an enquiry.</td></tr>`}
+    </tbody></table>`;
+  $("#hf").value = filter; $("#hf").onchange = (e) => { sessionStorage.setItem("hireFilter", e.target.value); show("hires"); };
+  $("#nh").onclick = () => editHire(null, {});
+  v.querySelectorAll("tr[data-id]").forEach(r => r.onclick = () => editHire(+r.dataset.id));
+}
+async function editHire(id, preset = {}) {
+  const x = id ? await q(sb.from("hires").select("*").eq("id", id).single()) : { status: "booked", reminders_enabled: true, agreement_status: "not_sent", ...preset };
+  const d = $("#dlg");
+  const unitOpts = `<option value="">Not assigned</option>` + UNITS.filter(u => u.active || u.id === x.unit_id).map(u => `<option value="${u.id}" ${u.id === x.unit_id ? "selected" : ""}>${h(u.code)} · ${h(u.name || u.type)}</option>`).join("");
+  const val = (k) => h(x[k] ?? "");
+  d.innerHTML = `<form method="dialog" id="hf2"><h2>${id ? "Hire #" + id : "New hire"}</h2>
+    <div class="g2"><label>Customer name<input name="customer_name" required value="${val("customer_name")}"></label><label>Company<input name="company" value="${val("company")}"></label>
+    <label>Email<input name="email" type="email" value="${val("email")}"></label><label>Phone<input name="phone" value="${val("phone")}"></label></div>
+    <label>Site address<input name="site_address" required value="${val("site_address")}"></label>
+    <div class="g3"><label>Unit<select name="unit_id">${unitOpts}</select></label><label>Start date<input name="start_date" type="date" required value="${val("start_date")}"></label><label>End date<input name="end_date" type="date" value="${val("end_date")}"></label></div>
+    <div class="g3"><label>Weekly rate ex GST<input name="weekly_rate_ex_gst" type="number" step="0.01" value="${val("weekly_rate_ex_gst")}"></label><label>Delivery fee ex GST<input name="delivery_fee_ex_gst" type="number" step="0.01" value="${val("delivery_fee_ex_gst")}"></label><label>PO / claim / job ref<input name="billing_ref" value="${val("billing_ref")}"></label></div>
+    <div class="g2"><label>Status<select name="status">${["booked","on_hire","ended","cancelled"].map(s => `<option value="${s}" ${s === x.status ? "selected" : ""}>${s.replace("_"," ")}</option>`).join("")}</select></label>
+    <label class="check" style="margin-top:26px"><input type="checkbox" name="reminders_enabled" ${x.reminders_enabled ? "checked" : ""}> Email the customer 7 and 2 days before the end date</label></div>
+    <label>Notes<textarea name="notes">${val("notes")}</textarea></label>
+    ${id ? `<div class="card"><div class="row"><strong class="grow">Hire agreement: <span class="pill ${x.agreement_status}">${x.agreement_status.replace("_"," ")}</span></strong>
+      ${x.agreement_status !== "signed" ? `<button type="button" class="btn sm" id="sendag">${x.agreement_status === "sent" ? "Resend" : "Email"} agreement to customer</button><button type="button" class="btn sec sm" id="copyag">Copy signing link</button>` : ""}</div>
+      ${x.agreement_sent_at ? `<p class="small muted">Sent ${fmtT(x.agreement_sent_at)}</p>` : ""}
+      ${x.agreement_status === "signed" ? `<p>Signed by <strong>${h(x.signed_name)}</strong> on ${fmtT(x.signed_at)}${x.licence_number ? ` · Licence ${h(x.licence_number)}` : ""}</p><img class="sig" src="${x.signature_png}" alt="signature"><p><button type="button" class="btn sec sm" id="lic">View licence</button></p>` : ""}
+      ${x.reminder_7_sent_at || x.reminder_2_sent_at ? `<p class="small muted">Reminders: ${x.reminder_7_sent_at ? "7-day " + fmtT(x.reminder_7_sent_at) : ""} ${x.reminder_2_sent_at ? " · 2-day " + fmtT(x.reminder_2_sent_at) : ""}</p>` : ""}</div>` : `<p class="small muted">Save the hire first, then you can email the agreement.</p>`}
+    <div class="row"><button class="btn" value="save">Save</button><span class="grow"></span>${id ? `<button class="btn danger sm" value="delete" formnovalidate>Delete</button>` : ""}<button class="btn sec" value="cancel" formnovalidate>Close</button></div></form>`;
+  d.showModal();
+  const f = $("#hf2");
+  f.onsubmit = (e) => { if (e.submitter?.value === "save" && !f.reportValidity()) e.preventDefault(); };
+  if ($("#sendag")) $("#sendag").onclick = async () => {
+    const dirty = formData(f); if (!dirty.email) return toast("Add an email address and save first");
+    $("#sendag").disabled = true;
+    const { data: { session } } = await sb.auth.getSession();
+    const r = await fetch(FN + "/agreement", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token, apikey: "sb_publishable_Ru1WwN93IIT-lN7V2yXYBQ_K_0M9fxB" }, body: JSON.stringify({ action: "send", hire_id: id }) });
+    const j = await r.json(); toast(r.ok ? "Agreement emailed" : j.error); d.close("cancel"); show("hires");
+  };
+  if ($("#copyag")) $("#copyag").onclick = () => { navigator.clipboard.writeText(location.origin + location.pathname.replace(/admin\/?$/, "") + "sign/?t=" + x.agreement_token); toast("Link copied"); };
+  if ($("#lic")) $("#lic").onclick = async () => { const { data, error } = await sb.storage.from("licences").createSignedUrl(x.licence_path, 300); if (error) return toast(error.message); window.open(data.signedUrl, "_blank"); };
+  d.onclose = async () => {
+    if (d.returnValue === "save") {
+      const o = formData(f);
+      ["unit_id", "weekly_rate_ex_gst", "delivery_fee_ex_gst"].forEach(k => o[k] = o[k] == null ? null : Number(o[k]));
+      if (preset.enquiry_id && !id) o.enquiry_id = preset.enquiry_id;
+      const before = id ? x.end_date : null;
+      if (id && o.end_date !== before) { o.reminder_7_sent_at = null; o.reminder_2_sent_at = null; }
+      await q(id ? sb.from("hires").update(o).eq("id", id) : sb.from("hires").insert(o));
+      if (preset.enquiry_id) await sb.from("enquiries").update({ status: "won" }).eq("id", preset.enquiry_id);
+      toast("Saved"); show("hires");
+    } else if (d.returnValue === "delete" && confirm("Delete this hire permanently?")) {
+      await q(sb.from("hires").delete().eq("id", id)); toast("Deleted"); show("hires");
+    }
+    history.replaceState(null, "", location.pathname);
+  };
+}
+
+// ---------------- Units ----------------
+async function unitsView(v) {
+  UNITS = await q(sb.from("units").select("*").order("code"));
+  const busy = await q(sb.from("hires").select("unit_id, customer_name, end_date").in("status", ["booked", "on_hire"]));
+  const where = (id) => busy.find(b => b.unit_id === id);
+  v.innerHTML = `<div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Units</h2><button class="btn" id="nu">Add unit</button></div>
+    <table><thead><tr><th>Code</th><th>Type</th><th>Name</th><th>Now</th><th></th></tr></thead><tbody>
+    ${UNITS.map(u => { const b = where(u.id); return `<tr><td><strong>${h(u.code)}</strong></td><td>${h(u.type)}</td><td>${h(u.name)}</td><td>${!u.active ? "<span class='pill cancelled'>retired</span>" : b ? `<span class="pill on_hire">on hire</span> <span class="small">${h(b.customer_name)}${b.end_date ? " to " + fmt(b.end_date) : ""}</span>` : "<span class='pill'>available</span>"}</td><td><button class="btn sec sm" data-u="${u.id}">Edit</button></td></tr>`; }).join("") || `<tr><td colspan="5" class="muted">Add each unit in the fleet (for example C01 to C10 for compacts, S01 to S04 for trailers) so hires can be assigned and utilisation tracked.</td></tr>`}
+    </tbody></table>`;
+  $("#nu").onclick = () => editUnit({ active: true, type: "compact" });
+  v.querySelectorAll("[data-u]").forEach(b => b.onclick = () => editUnit(UNITS.find(u => u.id === +b.dataset.u)));
+}
+function editUnit(u) {
+  const d = $("#dlg");
+  d.innerHTML = `<form method="dialog" id="uf"><h2>${u.id ? "Edit unit" : "Add unit"}</h2><div class="g3">
+    <label>Code<input name="code" required value="${h(u.code)}" placeholder="C01"></label>
+    <label>Type<select name="type">${["compact","standard","luxury","all-access"].map(t => `<option ${t === u.type ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+    <label>Name<input name="name" value="${h(u.name)}" placeholder="Compact ensuite"></label></div>
+    <label class="check"><input type="checkbox" name="active" ${u.active ? "checked" : ""}> In service</label>
+    <label>Notes<textarea name="notes">${h(u.notes)}</textarea></label>
+    <div class="row"><button class="btn" value="save">Save</button><span class="grow"></span><button class="btn sec" value="cancel" formnovalidate>Close</button></div></form>`;
+  d.showModal();
+  d.onclose = async () => { if (d.returnValue !== "save") return; const o = formData($("#uf")); await q(u.id ? sb.from("units").update(o).eq("id", u.id) : sb.from("units").insert(o)); toast("Saved"); show("units"); };
+}
+
+// ---------------- Blog ----------------
+async function postsView(v) {
+  const posts = await q(sb.from("posts").select("id,slug,title,published,published_at,updated_at").order("published_at", { ascending: false }));
+  v.innerHTML = `<div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Blog posts</h2><button class="btn" id="np">New post</button></div>
+    <p class="small muted">The website rebuilds every hour, so new and edited posts appear within about an hour of saving.</p>
+    <table><thead><tr><th>Title</th><th>Date</th><th>Status</th></tr></thead><tbody>
+    ${posts.map(p => `<tr class="click" data-id="${p.id}"><td><strong>${h(p.title)}</strong><br><span class="small muted">/blog/${h(p.slug)}/</span></td><td>${fmt(p.published_at)}</td><td><span class="pill ${p.published ? "won" : ""}">${p.published ? "published" : "draft"}</span></td></tr>`).join("")}
+    </tbody></table>`;
+  $("#np").onclick = () => editPost(null);
+  v.querySelectorAll("tr[data-id]").forEach(r => r.onclick = () => editPost(+r.dataset.id));
+}
+function mdPreview(src) {
+  const inl = s => h(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+  return src.replace(/\r/g, "").split(/\n{2,}/).map(b => { const L = b.split("\n"); if (/^#{2,3} /.test(L[0])) return `<h3>${inl(L[0].replace(/^#+ /, ""))}</h3>`; if (L.every(l => /^(- |\d+\. )/.test(l))) return "<ul>" + L.map(l => `<li>${inl(l.replace(/^(- |\d+\. )/, ""))}</li>`).join("") + "</ul>"; return `<p>${inl(L.join(" "))}</p>`; }).join("");
+}
+async function editPost(id) {
+  const p = id ? await q(sb.from("posts").select("*").eq("id", id).single()) : { published: false, body_md: "", published_at: today() };
+  const d = $("#dlg");
+  d.innerHTML = `<form method="dialog" id="pf"><h2>${id ? "Edit post" : "New post"}</h2>
+    <label>Title<input name="title" required value="${h(p.title)}"></label>
+    <div class="g2"><label>Web address (slug)<input name="slug" required pattern="[a-z0-9-]+" value="${h(p.slug)}" placeholder="lowercase-words-with-dashes"></label><label>Date<input name="published_at" type="date" value="${h(p.published_at)}"></label></div>
+    <label>Google description (about 150 characters)<input name="description" maxlength="200" value="${h(p.description)}"></label>
+    <div class="g2"><label>Cover photo<select name="cover_image"><option value="">None</option>${IMAGES.map(i => `<option ${i === p.cover_image ? "selected" : ""}>${i}</option>`).join("")}${p.cover_image && !IMAGES.includes(p.cover_image) ? `<option selected value="${h(p.cover_image)}">Uploaded image</option>` : ""}</select></label>
+    <label>Or upload a photo<input type="file" id="cov" accept="image/jpeg,image/png,image/webp"></label></div>
+    <label>Body <span class="muted small">(## for a heading, - for a list, **bold**, [link text](/contact/))</span><textarea name="body_md" rows="14" style="min-height:260px">${h(p.body_md)}</textarea></label>
+    <details><summary class="small">Preview</summary><div class="preview" id="pv"></div></details>
+    <label class="check" style="margin-top:10px"><input type="checkbox" name="published" ${p.published ? "checked" : ""}> Published</label>
+    <div class="row"><button class="btn" value="save">Save</button><span class="grow"></span>${id ? `<button class="btn danger sm" value="delete" formnovalidate>Delete</button>` : ""}<button class="btn sec" value="cancel" formnovalidate>Close</button></div></form>`;
+  d.showModal();
+  const f = $("#pf");
+  f.title.oninput = () => { if (!id) f.slug.value = f.title.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 70); };
+  f.querySelector("details").ontoggle = () => $("#pv").innerHTML = mdPreview(f.body_md.value);
+  $("#cov").onchange = async (e) => { const file = e.target.files[0]; if (!file) return; const path = Date.now() + "-" + file.name.toLowerCase().replace(/[^a-z0-9.]+/g, "-"); const { error } = await sb.storage.from("media").upload(path, file); if (error) return toast(error.message); const url = sb.storage.from("media").getPublicUrl(path).data.publicUrl; const o = document.createElement("option"); o.value = url; o.textContent = "Uploaded image"; o.selected = true; f.cover_image.appendChild(o); toast("Photo uploaded"); };
+  f.onsubmit = (e) => { if (e.submitter?.value === "save" && !f.reportValidity()) e.preventDefault(); };
+  d.onclose = async () => {
+    if (d.returnValue === "save") { const o = formData(f); await q(id ? sb.from("posts").update(o).eq("id", id) : sb.from("posts").insert(o)); toast("Saved. Live on the site within an hour."); show("posts"); }
+    else if (d.returnValue === "delete" && confirm("Delete this post?")) { await q(sb.from("posts").delete().eq("id", id)); show("posts"); }
+  };
+}
+
+// ---------------- FAQs ----------------
+async function faqsView(v) {
+  const faqs = await q(sb.from("faqs").select("*").order("sort").order("id"));
+  v.innerHTML = `<div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">FAQs</h2><button class="btn" id="nf">Add question</button></div>
+    <p class="small muted">Lower order numbers show first. The first five also appear on the home page. Changes go live within an hour.</p>
+    ${faqs.map(f => `<div class="card"><div class="row"><strong class="grow">${h(f.question)}</strong><span class="small muted">#${f.sort}</span>${f.published ? "" : "<span class='pill'>hidden</span>"}<button class="btn sec sm" data-f="${f.id}">Edit</button></div><p class="small muted" style="margin:6px 0 0">${h(f.answer).slice(0, 180)}${f.answer.length > 180 ? "…" : ""}</p></div>`).join("")}`;
+  $("#nf").onclick = () => editFaq({ sort: (faqs.at(-1)?.sort || 0) + 10, published: true });
+  v.querySelectorAll("[data-f]").forEach(b => b.onclick = () => editFaq(faqs.find(f => f.id === +b.dataset.f)));
+}
+function editFaq(f) {
+  const d = $("#dlg");
+  d.innerHTML = `<form method="dialog" id="ff"><h2>${f.id ? "Edit question" : "Add question"}</h2>
+    <label>Question<input name="question" required value="${h(f.question)}"></label>
+    <label>Answer<textarea name="answer" required rows="6">${h(f.answer)}</textarea></label>
+    <div class="g2"><label>Order<input name="sort" type="number" value="${f.sort}"></label><label class="check" style="margin-top:26px"><input type="checkbox" name="published" ${f.published ? "checked" : ""}> Show on website</label></div>
+    <div class="row"><button class="btn" value="save">Save</button><span class="grow"></span>${f.id ? `<button class="btn danger sm" value="delete" formnovalidate>Delete</button>` : ""}<button class="btn sec" value="cancel" formnovalidate>Close</button></div></form>`;
+  d.showModal();
+  const form = $("#ff"); form.onsubmit = (e) => { if (e.submitter?.value === "save" && !form.reportValidity()) e.preventDefault(); };
+  d.onclose = async () => {
+    if (d.returnValue === "save") { const o = formData(form); o.sort = Number(o.sort) || 100; await q(f.id ? sb.from("faqs").update(o).eq("id", f.id) : sb.from("faqs").insert(o)); toast("Saved"); show("faqs"); }
+    else if (d.returnValue === "delete" && confirm("Delete this question?")) { await q(sb.from("faqs").delete().eq("id", f.id)); show("faqs"); }
+  };
+}
+
+// ---------------- Email log ----------------
+async function logView(v) {
+  const rows = await q(sb.from("email_log").select("*").order("created_at", { ascending: false }).limit(100));
+  v.innerHTML = `<h2>Email log</h2><p class="small muted">Every email the system sends: enquiry alerts, customer replies, agreements and hire reminders.</p>
+    <table><thead><tr><th>When</th><th>Type</th><th>To</th><th>Result</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td>${fmtT(r.created_at)}</td><td>${h(r.kind)}</td><td class="small">${h(r.to_email)}</td><td>${r.ok ? "<span class='pill won'>sent</span>" : `<span class='pill lost'>failed</span><br><span class="small muted">${h((r.detail || "").slice(0, 140))}</span>`}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Nothing sent yet.</td></tr>`}
+    </tbody></table>`;
+}
+
+start();
+</script>
+</body>
+</html>
