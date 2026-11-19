@@ -25,7 +25,7 @@ main{max-width:1200px;margin:0 auto;padding:16px}
 .grow{flex:1}
 .muted{color:var(--muted)}.small{font-size:.85rem}
 .pill{display:inline-block;border-radius:999px;padding:2px 9px;font-size:.78rem;font-weight:700;background:#e8eef2;color:#334}
-.pill.new,.pill.sent{background:#fff3cd;color:#7a5200}.pill.won,.pill.signed,.pill.on_hire{background:#dff3e3;color:#1f5f28}.pill.lost,.pill.cancelled,.pill.spam{background:#fde2e1;color:#8a1c1c}.pill.booked,.pill.quoted,.pill.contacted{background:#e1effa;color:#0d5476}
+.pill.new,.pill.sent,.pill.warn{background:#fff3cd;color:#7a5200}.pill.won,.pill.signed,.pill.on_hire{background:#dff3e3;color:#1f5f28}.pill.lost,.pill.cancelled,.pill.spam{background:#fde2e1;color:#8a1c1c}.pill.booked,.pill.quoted,.pill.contacted{background:#e1effa;color:#0d5476}
 label{display:block;font-weight:600;font-size:.85rem;margin-bottom:10px}
 input,select,textarea{display:block;width:100%;margin-top:4px;padding:9px 10px;border:1.5px solid #c9d3db;border-radius:8px;background:#fff}
 textarea{min-height:90px}
@@ -391,11 +391,12 @@ function editUnit(u) {
 
 // ---------------- Blog ----------------
 async function postsView(v) {
-  const posts = await q(sb.from("posts").select("id,slug,title,published,published_at,updated_at").order("published_at", { ascending: false }));
+  const posts = await q(sb.from("posts").select("id,slug,title,published,published_at,publish_at,updated_at").order("publish_at", { ascending: false, nullsFirst: true }));
+  const sched = posts.filter(p => postState(p) === "scheduled").length;
   v.innerHTML = `<div class="row" style="margin-bottom:12px"><h2 class="grow" style="margin:0">Blog posts</h2><button class="btn" id="np">New post</button></div>
-    <p class="small muted">The website rebuilds every hour, so new and edited posts appear within about an hour of saving.</p>
-    <table><thead><tr><th>Title</th><th>Date</th><th>Status</th></tr></thead><tbody>
-    ${posts.map(p => `<tr class="click" data-id="${p.id}"><td><strong>${h(p.title)}</strong><br><span class="small muted">/blog/${h(p.slug)}/</span></td><td>${fmt(p.published_at)}</td><td><span class="pill ${p.published ? "won" : ""}">${p.published ? "published" : "draft"}</span></td></tr>`).join("")}
+    <p class="small muted">The website rebuilds every hour (at 17 past). A published post appears at the next rebuild; a scheduled post appears at the first rebuild after its time.${sched ? ` <strong>${sched} scheduled.</strong>` : ""}</p>
+    <table><thead><tr><th>Title</th><th>Goes live</th><th>Status</th></tr></thead><tbody>
+    ${posts.map(p => { const s = postState(p); return `<tr class="click" data-id="${p.id}"><td><strong>${h(p.title)}</strong><br><span class="small muted">/blog/${h(p.slug)}/</span></td><td>${s === "draft" ? "" : p.publish_at ? fmtT(p.publish_at) : fmt(p.published_at)}</td><td><span class="pill ${s === "published" ? "won" : s === "scheduled" ? "warn" : ""}">${s}</span></td></tr>`; }).join("")}
     </tbody></table>`;
   $("#np").onclick = () => editPost(null);
   v.querySelectorAll("tr[data-id]").forEach(r => r.onclick = () => editPost(+r.dataset.id));
@@ -404,27 +405,52 @@ function mdPreview(src) {
   const inl = s => h(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
   return src.replace(/\r/g, "").split(/\n{2,}/).map(b => { const L = b.split("\n"); if (/^#{2,3} /.test(L[0])) return `<h3>${inl(L[0].replace(/^#+ /, ""))}</h3>`; if (L.every(l => /^(- |\d+\. )/.test(l))) return "<ul>" + L.map(l => `<li>${inl(l.replace(/^(- |\d+\. )/, ""))}</li>`).join("") + "</ul>"; return `<p>${inl(L.join(" "))}</p>`; }).join("");
 }
+function postState(p) { return !p.published ? "draft" : p.publish_at && new Date(p.publish_at) > new Date() ? "scheduled" : "published"; }
+// datetime-local values are wall-clock time; treat them as Melbourne time whatever the browser's zone.
+function melOffsetMin(d) { const s = d.toLocaleString("en-US", { timeZone: "Australia/Melbourne", timeZoneName: "longOffset" }); const m = s.match(/GMT([+-])(\d{2}):?(\d{2})?/); return m ? (m[1] === "-" ? -1 : 1) * (+m[2] * 60 + +(m[3] || 0)) : 600; }
+function fromLocalInput(v) { if (!v) return null; const guess = new Date(v + ":00Z"); return new Date(guess.getTime() - melOffsetMin(new Date(guess.getTime() - melOffsetMin(guess) * 6e4)) * 6e4); }
+function toLocalInput(iso) { if (!iso) return ""; const d = new Date(iso); return new Date(d.getTime() + melOffsetMin(d) * 6e4).toISOString().slice(0, 16); }
+function nextMorning() { const t = new Date(Date.parse(today() + "T09:00:00Z") + 864e5); return t.toISOString().slice(0, 16); }
 async function editPost(id) {
-  const p = id ? await q(sb.from("posts").select("*").eq("id", id).single()) : { published: false, body_md: "", published_at: today() };
+  const p = id ? await q(sb.from("posts").select("*").eq("id", id).single()) : { published: false, body_md: "" };
+  const st = postState(p);
   const d = $("#dlg");
   d.innerHTML = `<form method="dialog" id="pf"><h2>${id ? "Edit post" : "New post"}</h2>
     <label>Title<input name="title" required value="${h(p.title)}"></label>
-    <div class="g2"><label>Web address (slug)<input name="slug" required pattern="[a-z0-9-]+" value="${h(p.slug)}" placeholder="lowercase-words-with-dashes"></label><label>Date<input name="published_at" type="date" value="${h(p.published_at)}"></label></div>
+    <label>Web address (slug)<input name="slug" required pattern="[a-z0-9-]+" value="${h(p.slug)}" placeholder="lowercase-words-with-dashes"></label>
+    <div class="g2"><label>Status<select name="state">
+      <option value="draft" ${st === "draft" ? "selected" : ""}>Draft (not on the website)</option>
+      <option value="published" ${st === "published" ? "selected" : ""}>${st === "published" ? "Published" : "Publish now"}</option>
+      <option value="scheduled" ${st === "scheduled" ? "selected" : ""}>Schedule for later</option></select></label>
+      <label id="whenL">Go live at (Melbourne time)<input name="when" type="datetime-local" value="${h(toLocalInput(p.publish_at) || nextMorning())}"></label></div>
     <label>Google description (about 150 characters)<input name="description" maxlength="200" value="${h(p.description)}"></label>
     <div class="g2"><label>Cover photo<select name="cover_image"><option value="">None</option>${IMAGES.map(i => `<option ${i === p.cover_image ? "selected" : ""}>${i}</option>`).join("")}${p.cover_image && !IMAGES.includes(p.cover_image) ? `<option selected value="${h(p.cover_image)}">Uploaded image</option>` : ""}</select></label>
     <label>Or upload a photo<input type="file" id="cov" accept="image/jpeg,image/png,image/webp"></label></div>
     <label>Body <span class="muted small">(## for a heading, - for a list, **bold**, [link text](/contact/))</span><textarea name="body_md" rows="14" style="min-height:260px">${h(p.body_md)}</textarea></label>
     <details><summary class="small">Preview</summary><div class="preview" id="pv"></div></details>
-    <label class="check" style="margin-top:10px"><input type="checkbox" name="published" ${p.published ? "checked" : ""}> Published</label>
     <div class="row"><button class="btn" value="save">Save</button><span class="grow"></span>${id ? `<button class="btn danger sm" value="delete" formnovalidate>Delete</button>` : ""}<button class="btn sec" value="cancel" formnovalidate>Close</button></div></form>`;
   d.showModal();
   const f = $("#pf");
+  const syncWhen = () => { $("#whenL").style.display = f.state.value === "scheduled" ? "" : "none"; f.when.required = f.state.value === "scheduled"; };
+  f.state.onchange = syncWhen; syncWhen();
   f.title.oninput = () => { if (!id) f.slug.value = f.title.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 70); };
   f.querySelector("details").ontoggle = () => $("#pv").innerHTML = mdPreview(f.body_md.value);
   $("#cov").onchange = async (e) => { const file = e.target.files[0]; if (!file) return; const path = Date.now() + "-" + file.name.toLowerCase().replace(/[^a-z0-9.]+/g, "-"); const { error } = await sb.storage.from("media").upload(path, file); if (error) return toast(error.message); const url = sb.storage.from("media").getPublicUrl(path).data.publicUrl; const o = document.createElement("option"); o.value = url; o.textContent = "Uploaded image"; o.selected = true; f.cover_image.appendChild(o); toast("Photo uploaded"); };
-  f.onsubmit = (e) => { if (e.submitter?.value === "save" && !f.reportValidity()) e.preventDefault(); };
+  f.onsubmit = (e) => {
+    if (e.submitter?.value !== "save") return;
+    if (!f.reportValidity()) return e.preventDefault();
+    if (f.state.value === "scheduled" && fromLocalInput(f.when.value) <= new Date()) { e.preventDefault(); toast("Pick a time in the future, or choose Publish now."); }
+  };
   d.onclose = async () => {
-    if (d.returnValue === "save") { const o = formData(f); await q(id ? sb.from("posts").update(o).eq("id", id) : sb.from("posts").insert(o)); toast("Saved. Live on the site within an hour."); show("posts"); }
+    if (d.returnValue === "save") {
+      const o = formData(f); const state = o.state; delete o.state; delete o.when;
+      if (state === "draft") { o.published = false; }
+      else if (state === "scheduled") { o.published = true; o.publish_at = fromLocalInput(f.when.value).toISOString(); }
+      else { o.published = true; if (st !== "published") o.publish_at = new Date().toISOString(); }
+      await q(id ? sb.from("posts").update(o).eq("id", id) : sb.from("posts").insert(o));
+      toast(state === "draft" ? "Saved as a draft." : state === "scheduled" ? `Scheduled. Goes live at the first hourly rebuild after ${fmtT(o.publish_at)}.` : "Saved. Live on the site within an hour.");
+      show("posts");
+    }
     else if (d.returnValue === "delete" && confirm("Delete this post?")) { await q(sb.from("posts").delete().eq("id", id)); show("posts"); }
   };
 }

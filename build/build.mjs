@@ -862,7 +862,7 @@ async function main() {
   fs.rmSync(OUT, { recursive: true, force: true });
   const dbFaqs = await fetchTable("faqs", "select=question,answer,sort&published=eq.true&order=sort.asc,id.asc");
   const faqs = dbFaqs?.length ? dbFaqs : SEED_FAQS.map(([question, answer]) => ({ question, answer }));
-  const dbPosts = await fetchTable("posts", "select=slug,title,description,body_md,cover_image,published_at,updated_at&published=eq.true&order=published_at.desc");
+  const dbPosts = await fetchTable("posts", "select=slug,title,description,body_md,cover_image,published_at,updated_at&published=eq.true&order=publish_at.desc.nullslast,published_at.desc");
   const posts = dbPosts ?? SEED_POSTS;
 
   const pages = {
